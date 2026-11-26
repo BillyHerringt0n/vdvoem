@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="robots" content="noindex">
+  <meta name="vdvoem" content="1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#1f1a18">
+  <title>Вдвоём</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='11' cy='16' r='9' fill='%23f2a687'/><circle cx='21' cy='16' r='9' fill='%23f6ede2' fill-opacity='.9'/></svg>">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- шрифт и библиотека связи не задерживают появление страницы -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" media="print" onload="this.media='all'">
+  <link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/mqtt@5.10.4/dist/mqtt.min.js">
+  <link rel="preconnect" href="https://www.youtube.com">
+  <link rel="preconnect" href="https://i.ytimg.com">
+  <link rel="modulepreload" href="links.js">
+  <link rel="modulepreload" href="load.js">
+  <link rel="modulepreload" href="net.js">
+  <link rel="modulepreload" href="players.js">
+  <link rel="modulepreload" href="sync.js">
+  <link rel="modulepreload" href="list.js">
+  <link rel="modulepreload" href="fun.js">
+  <link rel="modulepreload" href="cat.js">
+  <link rel="modulepreload" href="smoke.js">
+  <link rel="modulepreload" href="upscale.js">
+  <link rel="modulepreload" href="ext.js">
+</head>
+<body>
+  <main id="lobby" class="lobby">
+    <h1 class="wordmark" aria-label="Вдвоём">вдво<span class="yo">е</span>м</h1>
+    <p id="lobby-text">Наш маленький кинотеатр: одно видео на двоих и переписка рядом.</p>
+    <form id="join-form">
+      <label for="name">Как вас зовут?</label>
+      <input id="name" maxlength="24" autocomplete="nickname" required>
+      <button class="primary" id="join-btn">Создать комнату</button>
+      <button type="button" class="quiet" id="new-room" hidden>Создать новую комнату</button>
+    </form>
+    <small class="credits">Фото кальяна: <a href="https://commons.wikimedia.org/wiki/File:Shisha-edit.png" target="_blank" rel="noopener">Kaiser_Bob, Deuterium360</a>, CC BY-SA 3.0. Значки: Microsoft Fluent Emoji. Кот: наш.</small>
+  </main>
+
+  <div id="room" class="room" hidden>
+    <header class="top">
+      <strong class="brand wordmark" aria-label="Вдвоём">вдво<span class="yo">е</span>м</strong>
+      <div class="presence"><span id="dot" class="dot"></span><span id="status" role="status">Подключение…</span></div>
+      <div class="actions">
+        <button id="invite">Пригласить</button>
+        <button id="enhance" hidden title="Апскейл до размера экрана и адаптивная резкость. Только для файлов и прямых ссылок">Чёткость: выкл</button>
+        <button id="chat-toggle" aria-pressed="true">Чат<span id="unread" class="unread" hidden></span></button>
+        <button id="fs">На весь экран</button>
+      </div>
+    </header>
+
+    <form id="source" class="source">
+      <input id="url" type="text" inputmode="url" placeholder="Ссылка на Кинопоиск, YouTube или видеофайл" aria-label="Ссылка на видео" autocomplete="off">
+      <button class="primary">Включить</button>
+      <label class="button">Файл с устройства<input id="file" type="file" accept="video/*,.mkv" hidden></label>
+      <p id="source-error" class="error" role="alert" hidden></p>
+    </form>
+
+    <div id="theater" class="theater">
+      <section class="stage">
+        <div id="player"></div>
+        <div id="empty" class="panel">
+          <svg class="cup" viewBox="0 0 120 110" aria-hidden="true">
+            <g fill="none" stroke="#b5a498" stroke-width="4" stroke-linecap="round">
+              <path class="steam" d="M44 30c-6-7 6-11 0-20"/>
+              <path class="steam" d="M62 30c-6-7 6-11 0-20"/>
+            </g>
+            <path d="M82 50h6a13 13 0 0 1 0 26h-8" fill="none" stroke="#f2a687" stroke-width="7"/>
+            <path d="M22 40h64v30a26 26 0 0 1-26 26h-12a26 26 0 0 1-26-26z" fill="#f2a687"/>
+            <path d="M22 40h64v8H22z" fill="#e8916f"/>
+            <rect x="12" y="96" width="84" height="7" rx="3.5" fill="#f6ede2"/>
+          </svg>
+          <h2>Что смотрим сегодня?</h2>
+          <p>Вставьте ссылку сверху или выберите файл. Видео появится у вас обоих.</p>
+        </div>
+        <div id="need-file" class="panel" hidden>
+          <h2>Нужен тот же файл</h2>
+          <p id="need-file-text"></p>
+          <label class="button primary">Выбрать файл<input id="file-match" type="file" accept="video/*,.mkv" hidden></label>
+        </div>
+        <button id="tap" class="tap" hidden>Нажмите, чтобы смотреть вместе</button>
+        <div id="notice" class="notice" role="status" hidden></div>
+        <div id="sky" class="sky" aria-hidden="true"></div>
+        <div id="count" class="count" aria-live="assertive" hidden></div>
+        <div class="float">
+          <button id="fs-chat">Чат</button>
+          <button id="fs-exit">Свернуть</button>
+          <div class="reactions"></div>
+        </div>
+        <div id="toasts" class="toasts" aria-live="polite"></div>
+        <form id="quick" class="quick" hidden>
+          <input id="quick-input" maxlength="1000" placeholder="Сообщение, Esc — закрыть" aria-label="Быстрое сообщение" autocomplete="off">
+        </form>
+      </section>
+
+      <aside class="side">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" id="tab-chat" aria-selected="true" aria-controls="pane-chat">Чат</button>
+          <button type="button" role="tab" id="tab-list" aria-selected="false" aria-controls="pane-list">Хотим посмотреть</button>
+        </div>
+        <div id="pane-chat" class="pane" role="tabpanel">
+          <ol id="messages"></ol>
+          <div id="typing" class="typing" role="status"></div>
+          <div class="bar">
+            <div class="reactions"></div>
+            <button type="button" id="countdown" class="count-btn" title="Обратный отсчёт и запуск у обоих">3·2·1</button>
+          </div>
+          <form id="send" class="row">
+            <input id="text" maxlength="1000" placeholder="Сообщение" aria-label="Сообщение" autocomplete="off">
+            <button class="primary" aria-label="Отправить">→</button>
+          </form>
+        </div>
+        <div id="pane-list" class="pane" role="tabpanel" hidden>
+          <ul id="wishes"></ul>
+          <button type="button" id="pick" class="pick">Выбрать за нас</button>
+          <form id="add-wish" class="row">
+            <input id="wish-text" maxlength="300" placeholder="Название или ссылка" aria-label="Название или ссылка" autocomplete="off">
+            <button class="primary">Добавить</button>
+          </form>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
