@@ -6,9 +6,11 @@
   if (window.__vdvoemKp) return;
   window.__vdvoemKp = true;
 
-  const onKinopoisk = location.hostname === 'hd.kinopoisk.ru'
-    || [...(location.ancestorOrigins ?? [])].includes('https://hd.kinopoisk.ru');
-  if (!onKinopoisk) return;
+  const supportedHosts = ['hd.kinopoisk.ru', 'gimobrimo.cfd', 'qqpoisk.ru'];
+  const isSupported = supportedHosts.some(h => location.hostname.includes(h)) 
+    || [...(location.ancestorOrigins ?? [])].some(o => supportedHosts.some(h => o.includes(h)));
+  
+  if (!isSupported) return;
 
   const send = (msg) => {
     try { chrome.runtime.sendMessage({ from: 'kp', ...msg }); } catch { /* расширение обновили */ }

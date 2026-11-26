@@ -6,7 +6,15 @@
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
-      "matches": ["https://hd.kinopoisk.ru/*", "https://*.yandex.ru/*", "https://*.yandex.net/*"],
+      "matches": [
+        "https://hd.kinopoisk.ru/*", 
+        "https://*.yandex.ru/*", 
+        "https://*.yandex.net/*",
+        "https://gimobrimo.cfd/*",
+        "https://*.gimobrimo.cfd/*",
+        "https://qqpoisk.ru/*",
+        "https://*.qqpoisk.ru/*"
+      ],
       "js": ["kp.js"],
       "all_frames": true,
       "run_at": "document_idle"

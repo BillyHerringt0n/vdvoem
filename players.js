@@ -38,7 +38,6 @@ export async function createYoutube(container, id, start, onError) {
     });
   });
 
-  // Пока ролик не запускали, seekTo запустил бы его, а getCurrentTime вернул бы 0.
   let cuedAt = start;
   const raw = () => player.getPlayerState?.() ?? -1;
   const untouched = () => raw() === -1 || raw() === 5;
@@ -177,6 +176,82 @@ export function createKinopoisk(container, media, start, { ext, onReady }) {
     },
     state() {
       if (!fresh()) return 'buffering'; // вкладки нет — ничего не решаем за человека
+      if (last.ended) return 'ended';
+      if (last.buffering) return 'buffering';
+      return last.paused ? 'paused' : 'playing';
+    },
+    play: () => ext.send({ kind: 'command', op: 'play' }),
+    pause: () => ext.send({ kind: 'command', op: 'pause' }),
+    seek(t) {
+      ext.send({ kind: 'command', op: 'seek', t });
+      if (last) last = { ...last, t, at: performance.now() };
+    },
+    destroy() {
+      off();
+      clearInterval(timer);
+      card.remove();
+    },
+  };
+}
+
+// Зеркала (gimobrimo.cfd и др.) — используем ту же логику, что и для Кинопоиска
+export function createMirror(container, media, start, { ext, onReady }) {
+  const card = document.createElement('div');
+  card.className = 'kp-card';
+  card.innerHTML = `
+    <h2>Смотрим на зеркале</h2>
+    <p class="kp-title">${new URL(media.url).hostname}</p>
+    <p class="kp-status"></p>
+    <button class="primary" type="button">Открыть видео</button>
+    <p class="kp-hint">Пауза, перемотка и серии общие. Озвучку и субтитры каждый выбирает у себя.
+      Чат виден прямо поверх фильма: Enter — написать.</p>`;
+  container.replaceChildren(card);
+  const status = card.querySelector('.kp-status');
+
+  let last = null;
+  let connected = false;
+  const fresh = () => last && performance.now() - last.at < 2500;
+
+  card.querySelector('button').addEventListener('click', () => {
+    if (ext.ready) ext.send({ kind: 'open', url: media.url });
+    else window.open(media.url, '_blank', 'noopener');
+  });
+
+  function render() {
+    if (!ext.ready) {
+      status.textContent = 'Нужно расширение «Вдвоём» у вас обоих. Без него видео откроется, но синхронизации не будет.';
+    } else if (!fresh()) {
+      status.textContent = 'Откройте видео в новой вкладке и включите его — дальше всё общее.';
+    } else {
+      const mm = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+      status.textContent = `Подключено · ${mm(last.t)}${last.duration ? ' из ' + mm(last.duration) : ''}${last.paused ? ' · пауза' : ''}`;
+    }
+  }
+
+  const off = ext.on((msg) => {
+    if (msg.kind === 'state' && msg.state && Number.isFinite(msg.state.t)) {
+      last = { ...msg.state, at: performance.now() };
+      if (!connected) {
+        connected = true;
+        onReady?.();
+      }
+    }
+    render();
+  });
+  const timer = setInterval(() => {
+    if (connected && !fresh()) connected = false;
+    render();
+  }, 1000);
+  render();
+
+  return {
+    time() {
+      if (!last) return start;
+      const moving = !last.paused && !last.buffering && !last.ended;
+      return last.t + (moving ? ((performance.now() - last.at) / 1000) * (last.rate || 1) : 0);
+    },
+    state() {
+      if (!fresh()) return 'buffering';
       if (last.ended) return 'ended';
       if (last.buffering) return 'buffering';
       return last.paused ? 'paused' : 'playing';

@@ -1,6 +1,6 @@
 import { parseLink, cleanMedia, mediaKey, clock } from './links.js';
 import { openChannel, randomId } from './net.js';
-import { createYoutube, createVideo, createKinopoisk } from './players.js';
+import { createYoutube, createVideo, createKinopoisk, createMirror } from './players.js';
 import { ext } from './ext.js';
 import { createTimeline, createFollower } from './sync.js';
 import { mergeList, edit, waiting } from './list.js';
@@ -157,12 +157,18 @@ async function start(name, room) {
     const onError = (text) => { if (token === loadToken) notice(text, true); };
     try {
       let player;
-      if (media.type === 'youtube') player = await createYoutube(box, media.id, timeline.position(), onError);
-      else if (media.type === 'kinopoisk') {
+      if (media.type === 'youtube') {
+        player = await createYoutube(box, media.id, timeline.position(), onError);
+      } else if (media.type === 'kinopoisk') {
         player = createKinopoisk(box, media, timeline.position(), { ext, onReady: () => follower.apply() });
         // у второго человека вкладка Кинопоиска сама переходит на тот же фильм или серию
         if (kpPageKey !== key) openKinopoisk(media.url, true);
-      } else player = await createVideo(box, media.type === 'file' ? localFile.file : media.url, timeline.position(), onError);
+      } else if (media.type === 'mirror') {
+        player = createMirror(box, media, timeline.position(), { ext, onReady: () => follower.apply() });
+        if (kpPageKey !== key) openKinopoisk(media.url, true);
+      } else {
+        player = await createVideo(box, media.type === 'file' ? localFile.file : media.url, timeline.position(), onError);
+      }
       if (token !== loadToken) return player.destroy();
       follower.attach(player);
       if (player.element) attachEnhancer(player.element, box);
@@ -176,7 +182,7 @@ async function start(name, room) {
     }
   }
 
-  // ----- Кинопоиск через расширение -----
+  // ----- Кинопоиск и зеркала через расширение -----
 
   let kpPageKey = '';
   let kpOpenedAt = -Infinity;
@@ -190,27 +196,25 @@ async function start(name, room) {
   ext.on((msg) => {
     if (msg.kind === 'page' && typeof msg.url === 'string') {
       const parsed = parseLink(msg.url);
-      const media = parsed?.media.type === 'kinopoisk' ? parsed.media : null;
+      const media = parsed?.media.type === 'kinopoisk' || parsed?.media.type === 'mirror' ? parsed.media : null;
       const key = media ? mediaKey(media) : '';
       if (key === kpPageKey) return;
       kpPageKey = key;
-      // переход сделали мы сами — это не выбор человека
       if (!media || performance.now() - kpOpenedAt < 4000) return;
       const current = timeline.state.media;
-      if (key === mediaKey(current) || (current && current.type !== 'kinopoisk')) return;
-      // человек сам открыл другой фильм или серию во вкладке Кинопоиска — переключаем обоих
+      if (key === mediaKey(current) || (current && current.type !== 'kinopoisk' && current.type !== 'mirror')) return;
       startMedia(media, 0);
     }
     if (msg.kind === 'say' && typeof msg.text === 'string') sayText(msg.text);
-    if (msg.kind === 'blocked') notice('Нажмите ▶ во вкладке Кинопоиска: браузер не дал запустить видео сам.', true);
+    if (msg.kind === 'blocked') notice('Нажмите ▶ во вкладке с видео: браузер не дал запустить его сам.', true);
   });
 
-  // сообщения и события второго человека дублируем поверх фильма на Кинопоиске
   function relay(name, text) {
-    if (ext.ready && timeline.state.media?.type === 'kinopoisk') ext.send({ kind: name ? 'chat' : 'notice', name, text });
+    if (ext.ready && (timeline.state.media?.type === 'kinopoisk' || timeline.state.media?.type === 'mirror')) {
+      ext.send({ kind: name ? 'chat' : 'notice', name, text });
+    }
   }
 
-  // улучшение картинки: у каждого своё, по сети не передаётся
   function attachEnhancer(video, box) {
     try {
       enhancer = createEnhancer(video, box, {
@@ -268,7 +272,7 @@ async function start(name, room) {
     const error = $('source-error');
     error.hidden = Boolean(parsed);
     if (!parsed) {
-      error.textContent = 'Эта ссылка не подходит. Можно вставить Кинопоиск, YouTube или прямую ссылку на файл mp4, webm, m3u8.';
+      error.textContent = 'Эта ссылка не подходит. Можно вставить Кинопоиск, YouTube, зеркало или прямую ссылку на файл mp4, webm, m3u8.';
       return;
     }
     $('url').value = '';
@@ -362,7 +366,6 @@ async function start(name, room) {
   function addEvent(text) {
     if (!text) return;
     const list = $('messages');
-    // подряд идущие перемотки не копим
     const previous = list.lastElementChild;
     const li = previous?.dataset.event === text.split(' на ')[0] ? previous : document.createElement('li');
     li.className = 'event';
@@ -377,10 +380,8 @@ async function start(name, room) {
     scrollDown();
   }
 
-  // добавляет только незнакомые сообщения, возвращает их
   function merge(incoming) {
     const known = new Set(messages.map((m) => m.id));
-    // сообщения из сети проверяем: иначе битое сообщение сломало бы сортировку или вёрстку
     const fresh = incoming
       .filter((m) => m && typeof m.id === 'string' && typeof m.text === 'string' && typeof m.name === 'string'
         && Number.isFinite(m.ts) && !known.has(m.id))
@@ -504,7 +505,6 @@ async function start(name, room) {
       box.append(button);
     }
   }
-  // кальян и дым готовим заранее, когда страница уже свободна
   (window.requestIdleCallback ?? setTimeout)(() => prepareHookah(stage));
 
   $('countdown').addEventListener('click', () => {
@@ -517,7 +517,7 @@ async function start(name, room) {
     const { rev } = timeline.state;
     send({ type: 'countdown' });
     countdown($('count'), () => {
-      if (timeline.state.rev !== rev) return; // пока считали, кто-то перемотал или сменил видео
+      if (timeline.state.rev !== rev) return;
       timeline.local({ playing: true });
       sendState('play');
       addEvent(describe('play', 0, 'Вы'));
@@ -608,7 +608,6 @@ async function start(name, room) {
 
   $('fs').addEventListener('click', () => {
     setFull(true);
-    // на iPhone настоящего полного экрана для блока нет, остаётся развёрнутый вид
     theater.requestFullscreen?.().catch(() => {});
   });
   $('fs-exit').addEventListener('click', () => {
@@ -653,7 +652,6 @@ async function start(name, room) {
       if (media && peer.key !== mediaKey(media)) return `${peer.name}: видео ещё не открыто`;
       if (media && playing && peer.player === 'buffering') return `${peer.name}: загружается`;
       if (media && follower.player && peer.pos != null) {
-        // позиция партнёра на момент последнего сигнала против нашей шкалы тогда же
         const drift = Math.abs(peer.drift);
         if (drift > DRIFT_SHOWN) return `${peer.name}: расхождение ${Math.round(drift)} с`;
       }
@@ -709,7 +707,6 @@ async function start(name, room) {
     peer.seen = performance.now();
 
     if (type === 'hello' || isNew) {
-      // делимся тем, что знаем: кто свежее, тот и победит
       if (timeline.state.rev) send({ type: 'state', state: timeline.snapshot() });
       if (messages.length) send({ type: 'history', messages: messages.slice(-60) });
       if (wishes.length) send({ type: 'list', items: wishes });
@@ -782,7 +779,6 @@ async function start(name, room) {
 
   addEventListener('pagehide', () => send({ type: 'bye' }));
 
-  // Если в комнате никого, возвращаем то, что смотрели в прошлый раз.
   setTimeout(() => {
     const saved = store.get(savedKey, null);
     if (!timeline.state.rev && !peers.size && online && saved?.media) {
