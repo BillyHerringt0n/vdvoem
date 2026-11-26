@@ -2,6 +2,9 @@
 
 const YT_HOSTS = new Set(['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'youtu.be']);
 
+// Список поддерживаемых доменов-зеркал (пиратские плееры)
+const MIRROR_HOSTS = new Set(['gimobrimo.cfd', 'qqpoisk.ru']);
+
 function seconds(value) {
   if (!value) return 0;
   if (/^\d+s?$/.test(value)) return parseInt(value, 10);
@@ -34,6 +37,13 @@ export function parseLink(input) {
     return { media: { type: 'video', url: url.href }, start: 0 };
   }
 
+  // НОВОЕ: Проверка на зеркала (iframe)
+  if (MIRROR_HOSTS.has(host)) {
+    const cleanUrl = new URL(url.href);
+    cleanUrl.hash = ''; // убираем якоря
+    return { media: { type: 'mirror', url: cleanUrl.href }, start: 0 };
+  }
+
   // Кинопоиск: страница фильма или сериала, в том числе плеер hd.kinopoisk.ru с сезоном и серией
   if ((url.hostname === 'hd.kinopoisk.ru' || host === 'kinopoisk.ru') && /^\/(film|series)\/[\w-]+/.test(url.pathname)) {
     const clean = new URL(url.origin.replace('http:', 'https:') + url.pathname.replace(/\/+$/, '/'));
@@ -55,6 +65,13 @@ export function cleanMedia(media) {
     const parsed = parseLink(media.url);
     return parsed?.media.type === 'video' ? parsed.media : undefined;
   }
+  
+  // НОВОЕ: Обработка типа mirror
+  if (media.type === 'mirror' && typeof media.url === 'string') {
+    const parsed = parseLink(media.url);
+    return parsed?.media.type === 'mirror' ? parsed.media : undefined;
+  }
+
   if (media.type === 'kinopoisk' && typeof media.url === 'string') {
     const parsed = parseLink(media.url);
     return parsed?.media.type === 'kinopoisk' ? parsed.media : undefined;
@@ -69,6 +86,7 @@ export function mediaKey(media) {
   if (!media) return '';
   if (media.type === 'youtube') return 'youtube:' + media.id;
   if (media.type === 'video') return 'video:' + media.url;
+  if (media.type === 'mirror') return 'mirror:' + media.url; // НОВОЕ
   if (media.type === 'kinopoisk') return 'kinopoisk:' + media.url;
   return `file:${media.name}:${media.size}`;
 }
